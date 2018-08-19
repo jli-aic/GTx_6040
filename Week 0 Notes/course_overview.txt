@@ -1,0 +1,47 @@
+# CSE6040 - Intro to Computational Programming
+# Week 0 - Course Review Notes
+
+what is this course about?
+what do we need to know now?
+what does it take to succeed?
+
+goal:
+understand algorithmic and programming techniques needed to build analytics pipeline
+- pipeline:
+- data (raw inputs) >
+- preprocessing the raw data (data cleaning / transformation)
+- analyze the data (build a model / EDA)
+- present the results (output and visualization = human, more analysis)
+
+pre-requisites:
+- programming w/ python or equivalent
+- math: calculus, probability, linear algebra
+
+linear algebra:
+- pattern mining
+- ranking
+- regression
+- classification
+- clustering
+- compression
+- linear algebra serves as the language between all these algorithms
+- matrix = table of data
+- relationships between objects (encode real life in mathematical formulas)
+- computational = faster with linear algebra
+
+# success in this course:
+- learn to think computationally
+- practice coding!
+
+# think computationally
+- pipeline: inputs > preprocessing > analysis > output
+- this is a sequence of stages
+- input x -> y (output)
+- y = f(x) [take inputs x and output results y]
+
+- computational concerns: what do we ask about the function of x f(x)?
+1. is there an algorithm to compute f(x), exactly or approximately?
+2. given a program to compute f(x), is it correct?
+3. given a correct program, is it efficient?
+
+# write code! practice! hacking! 

@@ -1,0 +1,156 @@
+# Week 2 Notes: Association Rule x
+- classic problem in data mining
+
+think like a programmer:
+- ask a question
+- formulate it as problem
+- devise a problem
+- translate into code
+
+ex. retailer case
+- customer buys item A, do they also buy item B with it?
+- how can we tell?
+- which items are commonly bought together?
+- recommendation system: cross selling items
+
+- we have data and a question = formulate an analysis
+- association rule = a => b
+- "rice" implies "beans", rice => beans
+- this is conditional probability
+- given we buy rice what is the probability we buy beans?
+- find all a => b such that Pr[b | a] >= S (analyst threshold)
+- this is the association rule mining task!!
+- conditional probability definition:
+  - Pr[b | a] = Pr[a,b] / Pr[a]
+= probability of joint event [a,b] divided by probability of a
+
+devise an association rule algorithm:
+- find association rule -1: (R, a => b)
+- na = count # of receipts in R containing a
+- n[a,b] = count # of receipts in R containing a & b
+- return n[a,b] / na
+- this will estimate our Pr[b | a]
+- remember an algorithm is a set of formal logic to solve a problem!
+
+support: historical definition to estimate the joint probability
+- support(a,b) = n[a,b] / m
+- where m is the total number of receipts in our set
+- this is a quick hand estimate of Pr[a,b]
+
+confidence: historical definition to estimate conditional probability
+- confidence(a => b) = n[a,b] / n[a] = Pr[b | a]
+- these are shorthand definitions of the association rule we are trying to define
+
+
+in our mining problem we do not know the rules ahead of time
+- our initial associate rule problem works when we know which a and bs we want to find
+- to find all of our rules together we need a different approach
+
+
+contingency table:
+- Let T[a,b] = the number of receipts where both a and b appear (previously n[a,b])
+- we also need the individual item counts as well the na's
+- let T[a,b], C[a] <- 0 V a,b in A
+- where R = {r0, r1,...rm-1}
+- where A = {a0, a1, ... an-1}
+
+algorithm:
+- for every r in R do:
+  - for every pair (a,b) in r do
+    - T[a,b] <- T[a,b] + 1
+
+- start with zero for each item
+- scan through the receipts...
+- the algorithm should go through and enumerate all pairs of items and update our counts
+- what about multiple counts?
+- sets: items can only appear once in the set (assuming an item only appears once per r)
+- assume: r is an item set!
+- what about symmetry? are T[a,b] and T[b,a] the same? Yes!
+- we need our algorithm to enumerate unique item sets!
+- need to update our algorithm to include set notation
+
+algorithm updated:
+- for every r in R do:
+  - for every { a in r, b in r} r do: # set notation
+    - T[a,b] <- T[a,b] + 1
+    - T[b,a] <- T[b,a] + 1 # need to account for symmetry
+
+algorithm recap:
+- outer loop visits every receipt r in the set of total receipts R just once
+- inner loop visits each unique pair of items in each receipt r only once
+- at each visit of unique pairs we update our table T[a,b] by 1
+- this counts each occurrence of the item set [a,b]
+- finally, we also update the inverse of [a,b] to account for symmetry
+- in the end:
+- T[a,b] should be the unique count of the pairwise associations of items a and b in all recipets
+- T[a,b] == T[b,a] defined by set notation
+
+
+
+
+- most of the work will be to tabulate our joint table T[a,b]
+- we also need to hold the counts of a to give our pairwise association probability
+
+algorithm updated:
+- for every r in R do:
+  - for every { a in r, b in r} r do: # set notation
+    - T[a,b] <- T[a,b] + 1
+    - T[b,a] <- T[b,a] + 1 # need to account for symmetry
+  - for every a in r do:
+    - C[a] <- C[a] + 1 # get the raw counts of item a
+
+- we then need the algorithm to compute the conditional probability
+
+algorithm updated:
+
+- for every r in R do:
+  - for every { a in r, b in r} r do: # set notation
+    - T[a,b] <- T[a,b] + 1
+    - T[b,a] <- T[b,a] + 1 # need to account for symmetry
+
+  - for every a in r do:
+    - C[a] <- C[a] + 1 # get the raw counts of item a
+
+  - for every (a in A, b in A) do:
+    - if T[a,b] / C[a] >= S          # confidence
+      - then output a => b
+
+
+Summary:
+start with receipts...
+ask question: what pairs of items tend to occur together?
+formalize this question as a probabilistic one: using conditional probability as our measure
+
+Data: receipts
+Analysis: frequently co-occurrences of pairs
+Formalization: compute confidence(a => b) # confidence of our associate rule
+Algorithm: visit each receipt and tabulate the item sets
+
+- detailed algorithm to formally state all assumptions
+- be precise in order to get the details right
+
+
+
+
+Translating our algorithm to code:
+- our algorithm gives the correct solution...but is it efficient?
+- think like a computer scientist: correct, efficient
+- too much work and too much storage slow down our algorithms
+
+storage concerns:
+- ex. we might need up to n^2 entries to store all item pairs = this is exponential as products expand
+
+work concerns:
+- we visit every possible pair but then filter down by our threshold
+- depending on our threshold many rules won't be viable
+- we want to handle lots of data or big N...
+- algorithms that scale like n^2, in time or storage are really bad!
+- we would be better suited to design algorithms that scale like n log n or n
+
+designing algorithms like a computer scientist:
+- we have input = n, and output = k
+- goal:
+- time and storage scaling is proportional to n + k or n + k log n + k
+- in the computer science world we call an algorithm that scales linearly work optimal
+- work optimal: O(n + k)
+- our goal is to build a work optimal algorithm

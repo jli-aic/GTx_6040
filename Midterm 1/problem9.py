@@ -7,7 +7,7 @@
 
 # **Setup.** This problem involves a number of functions from the Python standard library. Here are some of them; run the code cell below to make them available for use.
 
-# In[1]:
+# In[3]:
 
 
 # The test cells need these:
@@ -28,7 +28,7 @@ from math import exp, sqrt, pi, log
 # 
 # In Python, it's easy to implement this formula using the `sum()` function, which can sum the elements of any iterable collection, like a list:
 
-# In[2]:
+# In[4]:
 
 
 x = [1, 2, 3, 4, 5]
@@ -43,7 +43,7 @@ print("sum({}) == {}".format(x, sum(x)))
 
 # **Exercise 0** (3 points). Write a function, `product(x)`, that returns the product of a collection of numbers `x`.
 
-# In[3]:
+# In[5]:
 
 
 def product(x):
@@ -58,7 +58,7 @@ def product(x):
 print("product({}) == {}?".format(x, product(x))) # Should be 120
 
 
-# In[4]:
+# In[6]:
 
 
 # Test cell: `product_test0` (1 point)
@@ -104,7 +104,7 @@ check_product([1, 2, 3, 4, 5]) == 120
 print("\n(Passed first test!)")
 
 
-# In[5]:
+# In[7]:
 
 
 # Test cell: `product_test1` (2 points)
@@ -137,7 +137,7 @@ print("(Passed second battery of tests!)")
 # 
 # > In the signature below, `mu` and `sigma` are set to accept default values of 0.0 and 1.0, respectively. But your function should work for any value of `mu` and any `sigma > 0`.
 
-# In[6]:
+# In[8]:
 
 
 import math
@@ -153,7 +153,7 @@ def gaussian0(x, mu=0.0, sigma=1.0):
 print(gaussian0(1.0)) # Should get 0.24197072451914...
 
 
-# In[7]:
+# In[9]:
 
 
 # Test cell: `gaussian0_test` (1 point)
@@ -201,7 +201,7 @@ print("\n(Passed!)")
 # gaussians([-2, 1, 3.5], 7.0, 1.23) == [7.674273364934753e-13, 2.2075380785334786e-06, 0.0056592223086500545]
 # ```
 
-# In[11]:
+# In[10]:
 
 
 def gaussians(X, mu=0.0, sigma=1.0):
@@ -217,7 +217,7 @@ def gaussians(X, mu=0.0, sigma=1.0):
 print(gaussians([-2, 1, 3.5], 7.0, 1.23))
 
 
-# In[13]:
+# In[11]:
 
 
 # Test cell: `gaussians_test` (1 point)
@@ -246,7 +246,7 @@ print("\n(Passed!)")
 # 
 # In this problem, let's suppose for simplicity that $p(x)$ is a normal or Gaussian distribution with mean $\mu$ and variance $\sigma^2$, meaning that $p(x_i) = g(x_i)$. Here is a straightforward way to implement $L(\ldots)$ in Python.
 
-# In[14]:
+# In[12]:
 
 
 def likelihood_gaussian(x, mu=0.0, sigma=1.0):
@@ -261,7 +261,7 @@ print(likelihood_gaussian(x))
 
 # The problem is that you might need to multiply many small values. Then, due to the limits of finite-precision arithmetic, the likelihood can quickly go to zero, becoming meaningless, even for a small number of data points.
 
-# In[15]:
+# In[13]:
 
 
 # Generate many random values
@@ -285,7 +285,7 @@ for n in N:
 # 
 # Let's repeat the experiment above but also print the log-likelihood along with the likelihood:
 
-# In[16]:
+# In[14]:
 
 
 for n in N:
@@ -308,27 +308,20 @@ for n in N:
 # 
 # > _Hint._ In addition to the inverse relationship between $\log$ and $\exp$, use the algebraic fact that $\log(a \cdot b) = \log a + \log b$ to derive a different way to comptue log-likelihood.
 
-# In[65]:
+# In[16]:
 
 
 def log_likelihood_gaussian(X, mu=0.0, sigma=1.0):
-    assert type(x) is list
-    
-    g_all = gaussians(x, mu, sigma = sigma)
-    L = product(g_all)
-    eps = 1e-38
-
-            
-    
-    return log(1 - (L + eps))
-
-
-print(likelihood_gaussian(x))
+    ### BEGIN SOLUTION
+    def log_gaussian0(x):
+        return -0.5*((x - mu)/sigma)**2 - log(sigma*sqrt(2*pi))
+    log_gaussians = [log_gaussian0(xi) for xi in X]
+    return sum(log_gaussians)
 
 
 
 
-# In[66]:
+# In[17]:
 
 
 # Test cell: `log_likelihood_gaussian_test0` (2 points)
@@ -341,7 +334,7 @@ for n in N:
 print("\n(Passed!)")
 
 
-# In[67]:
+# In[18]:
 
 
 # Test cell: `log_likelihood_gaussian_test1` (3 points)

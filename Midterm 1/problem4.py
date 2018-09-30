@@ -1,507 +1,514 @@
 
 # coding: utf-8
 
-# # Problem 4: Change Detection
+# # Problem 4: Scraping data from "FiveThirtyEight"
 # 
-# In this problem, you will implement a computational primitive used in time-series analysis. This technique is the _cumulative sum_, or __[CuSum](https://en.wikipedia.org/wiki/CUSUM)__, method.
-# 
-# This problem has 5 exercises, numbered 0 through 4 and worth 2 points each.
+# There are a ton of fun interactive visualizations at the website, [FiveThirtyEight](http://fivethirtyeight.com). For example, consider the one that tracks the US President's approval ratings: https://projects.fivethirtyeight.com/trump-approval-ratings/
 
-# **Motivating example.** Consider a steam heater in manufacturing plant. A sensor monitors the heater's temperature every second. The plant considers the safe operating limit of the heater to be an average of $400~^\circ F$. You are asked to design an algorithm to raise an alarm when the heater is operating significantly outside this limit.
+# Here is a screenshot of the interactive graph it contains:
 # 
-# The catch is that the sensor _occasionally_ reports an erroneous value.
+# ![538 DJT Approval Meter](https://cse6040.gatech.edu/datasets/538-djt-pop/538-demo.png)
 # 
-# Therefore, you don't want to raise an alert too early for a single errant temperature. Yet, you also don't want to wait too long to raise an alarm. The CuSum primitive will help you in your task.
+# In it, you can select each day ("movable cursor") and get information about the approval ratings for that day.
 
-# **Definition: CuSum.** Let $t$ denote the current time. The CuSum primitive calculates a value, $S_t$, by the formula
+# As it turns out, this visualization is implemented in JavaScript and all of the individual data items are embedded within the web page itself. For example, here is a 132-page PDF file, which is the source code for the web page taken on September 6, 2018: [PDF file](https://cse6040.gatech.edu/datasets/538-djt-pop/2018-09-06.pdf). The raw data being rendered in the visualization starts on page 50.
 # 
-# $$
-#     S_t = \max \left\{ 0, S_{t-1} + (x_t - \mu) \right\},
-# $$
+# Of course, that means you can use your Python-fu to try to extract this data for your own purposes! Indeed, that is your task for this problem.
 # 
-# where
-# 
-# - $S_t$ is the value of the function at time $t$;
-# - $S_{t-1}$ is the value of the function at time $t-1$;
-# - $\mu$ is a predetermined mean value, either from an expert or possibly calculated over a range of observed data;
-# - and $x_t$ is the observed value of the temperature sensor at time $t$.
-# 
-# Take a moment to convince yourself that $S_t$ is always at least zero, and that it is computed by updating the previous value, $S_{t-1}$, by the difference between the current observation ($x_t$) and an expected mean value ($\mu$).
+# > Although the data in this problem comes from an HTML file with embedded JavaScript, you do **not** need to know anything about HTML or JavaScript to solve this problem. It is purely an exercise of rudimentary Python and computational problem solving.
 
-# **The analysis.** You wish to raise an alarm **only when** the value of $S_t$ crosses a predetermined threshold value, $\alpha$, i.e., when $S_t > \alpha$.
+# # Reading the raw HTML file
 # 
-# Let's break down this analysis task into smaller parts.
+# Let's read the raw contents of the FiveThirtyEight approval ratings page (i.e., the same contents as the PDF) into a variable named `raw_html`.
+# 
+# > Like the groceries problem in Notebook 2, this cell contains a bunch of code for getting the data file you need, which you can ignore.
 
-# **Exercise 0** (2 points). Write a function, `calc_mean(L)`, that takes a list of values as input and returns the mean of these values. The returned value should be a `float`.
-# 
-# If `L` is empty, your function should return 0.0.
+# In[1]:
+
+
+def download(url, local_file, overwrite=False):
+    import os, requests
+    if not os.path.exists(local_file) or overwrite:
+        print("Downloading: {} ...".format(url))
+        r = requests.get(url)
+        with open(local_file, 'wb') as f:
+            f.write(r.content)
+        return True
+    return False # File existed already
+
+def get_checksum(local_file):
+    import io, hashlib
+    with io.open(local_file, 'rb') as f:
+        body = f.read()
+        body_checksum = hashlib.md5(body).hexdigest()
+        return body_checksum
+
+def download_or_load_locally(file, local_dir="", url_base=None, checksum=None):
+    if url_base is None: url_base = "https://cse6040.gatech.edu/datasets/"
+    local_file = "{}{}".format(local_dir, file)
+    remote_url = "{}{}".format(url_base, file)
+    download(remote_url, local_file)
+    if checksum is not None:
+        body_checksum = get_checksum(local_file)
+        assert body_checksum == checksum,             "Downloaded file '{}' has incorrect checksum: '{}' instead of '{}'".format(local_file,
+                                                                                       body_checksum,
+                                                                                       checksum)        
+    print("'{}' is ready!".format(file))
+    
+def on_vocareum():
+    import os
+    return os.path.exists('.voc')
+
+if on_vocareum():
+    URL_BASE = None
+    DATA_PATH = "../resource/asnlib/publicdata/538-djt-pop/"
+else:
+    URL_BASE = "https://cse6040.gatech.edu/datasets/538-djt-pop/"
+    DATA_PATH = ""
+datasets = {'2018-09-06.html': '291a7c1cbf15575a48b0be8d77b7a1d6'}
+
+for filename, checksum in datasets.items():
+    download_or_load_locally(filename, url_base=URL_BASE, local_dir=DATA_PATH, checksum=checksum)
+
+with open('{}{}'.format(DATA_PATH, '2018-09-06.html')) as fp:
+    raw_html = fp.read()
+print("\n(All data appears to be ready.)")
+
+
+# **File snippets.** Run the following code cell. It takes the `raw_html` string and prints the substring just around the start of the raw data you'll need, i.e., starting at page 50 of the PDF:
+
+# In[2]:
+
+
+sample_offset, sample_len = 69950, 1500
+print(raw_html[sample_offset:sample_offset+sample_len])
+
+
+# Run the following code cell to see the end of the raw data region.
 
 # In[3]:
 
 
-def calc_mean(L):
-    if len(L) == 0:
-        return 0.0
-    else:
-        return sum(L) / len(L)
+sample_end = 257500
+print(raw_html[sample_end:sample_end+sample_len])
 
 
-# In[4]:
+# Please make the following observations about the file snippets shown above:
+# 
+# - The raw data of approval ratings begins with the text, `'var approval=['` and ends with a closing square bracket, `']'`. No other square brackets appear between these two.
+# - Each "data point" or "data record" is encoded in JavaScript Object Notation (JSON), which is essentially the same as a Python dictionary. That is, it is enclosed in curly brackets, `{...}` and contains a number of key-value pairs. These include the date (`"date":"yyyy-mm-dd"`), approval and disapproval rating estimates (`"approve_estimate":"45.46693"` and `"disapprove_estimate":"41.26452"`), as well as upper and lower error bounds (`"..._hi"` and `"..._lo"`). The estimates correspond to the green (approval) and orange (disapproval) lines, and the error bounds form the shaded regions around those lines.
+# - Each data record includes a key named `"future"`. That's because FiveThirtyEight has projected the ratings into the future, so some records correspond to observed values (`"future":false`) while others correspond to extrapolated values (`"future":true`).
+# 
+# In addition, for the exercises below, you may assume the data records are encoded in the same way, e.g., the fields appear in the same order and there are no variations in punctuation or whitespace from what you see in the above snippets.
+
+# ## Your task: Extracting the approval ratings
+
+# **Exercise 0** (1 point). Recall that the data begins with `'var approval=[...'` and ends with a closing square bracket, `']'`. Complete the function, `extract_approval_raw(html)`, below. The input variable, `html`, is a string corresponding to the raw HTML file. Your function should return the substring beginning immediately **after** the opening square bracket and up to, but **excluding**, the last square bracket. It should return exactly that substring from the file, and should not otherwise modify it.
+# 
+# > While you don't have to use regular expressions for this problem, if you wish to, observe that the cell below imports the `re` module.
+
+# In[119]:
 
 
-## Test cell: `exercise0`
+import re
 
-import numpy as np
-def test_calc_mean():
-    from math import isclose
+def extract_approval_raw(html):
+    assert isinstance(html, str), "`html` is not a string."
+    re_find = re.search("\[([^]]+)\]", html)
+    result = re_find.group(0) if re_find else ""
+    result = re.sub('\]', '', result)
+    result = re.sub('\[', '', result)
     
-    # === Test case 1 ===
-    l1 = [1,2,3,4,5,6,7,8,9,10,11]
-    v1 = calc_mean(l1)
-    assert type(v1) is float, 'The output type of your function is not a `float`.'
-    assert v1 == 6
-    print('The first of three tests passed.')
     
-    # === Test case 2 ===
-    l2 = [0.6147724086784333,
-     0.041371060901369994,
-     0.15517074629809358,
-     0.9994471337608886,
-     0.34722143849306275,
-     0.9736540850206432,
-     0.9876353838953996,
-     0.43634148883600743,
-     0.19253345111181208,
-     0.9009963538834159,
-     0.0128030718775628,
-     0.49096023681186607,
-     0.7077636910061673,
-     0.08720641952991925,
-     0.11623445158154477,
-     0.5693725240553406,
-     0.21344540877232931,
-     0.9002574759050241,
-     0.48243289649604815,
-     0.10056662767642566,
-     0.7849777627597629,
-     0.19465211312640196,
-     0.24315693645974512,
-     0.03280598433741133,
-     0.9068657045623628,
-     0.8137126323327173,
-     0.4709064813407924,
-     0.8129058009526944,
-     0.21502524948350632,
-     0.9799785187660908,
-     0.6398366879644906,
-     0.1763342967561098,
-     0.8600030568483623,
-     0.06474748719556933,
-     0.17812693869592933,
-     0.6383284889427977,
-     0.15655520642675347,
-     0.9348178779950076,
-     0.30987851590583027,
-     0.4257618080414638,
-     0.05640492355676585,
-     0.5896060176458584,
-     0.6927091337694952,
-     0.4779798826877506,
-     0.12616636986977003,
-     0.9657925560517088,
-     0.9921928728923576,
-     0.5195728322270448,
-     0.5347703718671102,
-     0.6766015340172438,
-     0.5723492327566893,
-     0.8686225610761558,
-     0.7507097235435711,
-     0.8354470091034075,
-     0.4710212262143838,
-     0.6129726876928584,
-     0.9835526850557775,
-     0.456509500680786,
-     0.5432556087604551,
-     0.4054179327898174,
-     0.42824401398053835,
-     0.3129138114275283,
-     0.1224140133827466,
-     0.6680206838711844,
-     0.01421622087230101,
-     0.5834231089638673,
-     0.7629695652366693,
-     0.022635672817869712,
-     0.4982537409553647,
-     0.45619559492743234,
-     0.6997574981949215,
-     0.8852275128900928,
-     0.6354408255303142,
-     0.6173324771436511,
-     0.8125828432894691,
-     0.14441920559155552,
-     0.546271957665997,
-     0.07176999659289907,
-     0.9387954123123966,
-     0.16083705910262458,
-     0.7079371445595795,
-     0.6521862976232009,
-     0.3783981542310192,
-     0.3680400775054291,
-     0.6612607701755463,
-     0.3521612486201041,
-     0.4620998818749855,
-     0.6438310682088813,
-     0.08542505813604229,
-     0.914457432737063,
-     0.045825132886521236,
-     0.7663149379499217,
-     0.1974530956941304,
-     0.1399606052200838,
-     0.1707515682711065,
-     0.6146344959640809,
-     0.973624652163067,
-     0.6592102237643751,
-     0.5262452694633635,
-     0.16479882048585615]
-    v2 = calc_mean(l2)
-    assert type(v2) is float, 'The output type of your function is not what is expected'
-    assert isclose(v2, 0.5016755571602795, rel_tol=1e-15 * len(l2)), "Your value: {}".format(v2)
-    print('The second of three tests passed.')
+    return result
     
-    # Test 3
-    assert calc_mean([]) == 0.0, "Did not return the correct value for an empty input."
-    print('The third of three tests passed.')
-    
-test_calc_mean()
-print("\n(Passed!)")
+raw_data = extract_approval_raw(raw_html)
+print("type(raw_data) == {}   (should be a string!)\n".format(type(raw_data)))
+print("=== First and last 300 characters ===\n{}\n   ...   \n{}".format(raw_data[:300], raw_data[-300:]))
+raw_data
 
 
-# Now that you have calculated the mean, the next step is to implement the function for calculating CuSum.
-
-# **Exercise 1** (2 points). Write a function, `cusum(x, mu)`, that takes a list of observed temperatures, `x`, and mean parameter `mu` as inputs, and then returns a list of the cumulative sum values at each time.
-# 
-# Recall that these CuSum values are defined by
-# 
-# $$
-#     S_t = \max \left\{ 0, S_{t-1} + (x_t - \mu) \right\}.
-# $$
-# 
-# Assume that $S_{-1} = 0$, that is, the value at $t=-1$, which is "before" $t=0$, is zero.
-# 
-# For example:
-# 
-# ```python
-# x = [1,1,2,4,2,4,6,8,9,1,2,3,1,2,1,5]
-# mu = 3
-# assert cusum(x, m) == [0, 0, 0, 0, 1, 0, 1, 4, 9, 15, 13, 12, 12, 10, 9, 7, 9]
-# ```
-
-# In[35]:
+# In[41]:
 
 
-from itertools import accumulate
-from numpy import cumsum
+# Test cell: `test__extract_approval_raw` (1 point)
 
-def cusum(x, mu):
-    total = [0]
-    prev = 0
-    for x_i in x:
-        total.append(max(0, prev + (x_i - mu)))
-        prev = max(0, prev + (x_i - mu))
-        
-        
-    return total
-
-x = [1,1,2,4,2,4,6,8,9,1,2,3,1,2,1,5]
-cusum(x, 3)
-
-
-
-# In[36]:
-
-
-# Test cell: `exercise1`
-
-def check_exercise1(x, mu, S_true):
-    from math import isclose
-    print("Test case:\n- x == {}\n- mu == {}\n- True solution: {}".format(x, mu, S_true))
-    S_you = cusum(x, mu)
-    print("- Your solution: {}".format(S_you))
-    assert type(S_you) is list, "Your function did not return a list."
-    assert all([isclose(s, t, rel_tol=1e-15*len(x)) for s, t in zip(S_you, S_true)]), "Numerical values differ!"
-    print("\n")
-
-# Test 0
-check_exercise1([1,1,2,4,2,4,6,8,9,1,2,3,1,2,1,5], 3, [0, 0, 0, 0, 1, 0, 1, 4, 9, 15, 13, 12, 12, 10, 9, 7, 9])
-
-# Test 1
-check_exercise1([36, 29, 28, 22, 5, 20, 39, 3, 40, 48, 47, 9, 0, 36, 31, 20, 13, 41, 10, 46],
-                40,
-                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 15, 0, 0, 0, 0, 0, 0, 1, 0, 6])
-
-# Test 2
-check_exercise1([39, 37, 17, 28, 36, 40, 35, 32, 23, 1, 38, 3, 33, 3, 47, 13, 24, 38, 14, 8],
-                30,
-                [0, 9, 16, 3, 1, 7, 17, 22, 24, 17, 0, 8, 0, 3, 0, 17, 0, 0, 8, 0, 0])
-
-# Test 3
-check_exercise1([1,1,2,4,2,4,6,8,9,1,2,3,1,2,1,5],
-               3,
-               [0, 0, 0, 0, 1, 0, 1, 4, 9, 15, 13, 12, 12, 10, 9, 7, 9])
-
-# Test 4
-check_exercise1([0, 45, 36, 14, 29, 23, 5, 30, 36, 4, 24, 7, 49, 11, 38, 42, 29, 27, 2, 5],
-                30,
-                [0, 0, 15, 21, 5, 4, 0, 0, 0, 6, 0, 0, 0, 19, 0, 8, 20, 19, 16, 0, 0])
-
-print("(Passed!)")
-
-
-# **Exercise 2** (2 points). Write a function, `get_index(CS, alpha)`, that takes a list `CS` and threshold `alpha` as inputs and returns the position, `index`, of the first element such that `CS[index] > alpha`.
-# 
-# For example:
-# 
-# ```python
-# CS = [0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9]
-# alpha = 12
-# assert get_index(CS, alpha) == 11
-# ```
-# 
-# If no such element is found in `CS`, the function should return -1.
-
-# In[63]:
-
-
-def get_index(CS, alpha):
-    
-    greater = []
-    
-    for index, x_i in enumerate(CS):
-        if x_i > alpha:
-            greater.append(index)
-            
-    if not greater:
-        return -1
-    else:
-        return greater[0]
-            
-            
-    return greater
-
-        
-CS = [0, 14, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9]
-alpha = 12
-get_index(CS, alpha)
-
-
-
-# In[64]:
-
-
-# Test cell: `exercise2`
-
-def check_exercise2(CS, alpha, ans):
-    print("Test case:")
-    print("- Input         : {}".format(CS))
-    print("- Threshold     : {}".format(alpha))
-    print("- Correct output: {}".format(ans))
-    your_ans = get_index(CS, alpha)
-    print("- Your output   : {}".format(your_ans))
-    assert your_ans == ans, "Solutions do not match!"
-
-# Test 1
-check_exercise2([0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9], 12, 11)
-
-# Test 2
-check_exercise2([0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9], 15, -1)
-
-# Test 3
-check_exercise2([0, 14, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9], 12, 1)
-
-# Test 4
-check_exercise2([0, 1, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 17, 19, 25, 30, 20], 25, 15)
+raw_data = extract_approval_raw(raw_html)
+assert isinstance(raw_data, str), "Your function did not return a string!"
+assert len(raw_data) == 188678, "Did your function return all of the substring? It should have {} characters, but your function has {} instead, making it a bit too {}.".format(188678, len(raw_data), "short" if len(raw_data) < 188678 else "long")
 
 print("\n(Passed!)")
 
 
-# **Putting it all together.** Recall that you've now built the following functions:
+# **Exercise 1** (3 points). Complete the function, `extract_approval_estimates(data_substr)`, below. It takes as input a string, `data_substr`, which would be a data substring like the one returned by `extract_approval_raw()`. It should return a **dictionary** where
 # 
-# - `calc_mean(L)`: returns the mean of `L`;
-# - `cusum(x, mu)`: returns the CuSum for the sequence `x[:]`, given `mu`; and
-# - `get_index(CS, alpha)`: returns the position in `CS` that exceeds a threshold `alpha`.
+# - each key is a date, stored as a string in the form `'2017-01-23'` (**without the quotes**);
+# - each corresponding value is the approval rating, **stored as a `float`**.
 # 
-# Now let's put all the pieces of this puzzle together!
-
-# **Exercise 3** (2 points). Write a function, `raise_alarm(x, alpha)`, that takes a list of observed temperatures, `x`, and a threshold, `alpha`, as inputs, and returns the first element as a pair (tuple), `(index, element)`, such that the CuSum at time `index` exceeds `alpha`.
-# 
-# For the mean ($\mu$), use the mean of `x`. And if no CuSum value exceeds the threshold, your function should return `(-1, None)`.
-# 
-# Here is an example that should raise an alarm:
+# For example, executing
 # 
 # ```python
-# x = [0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9]
-# alpha = 12
-# assert raise_alarm(x, alpha) == (11, 13)
+#     approvals = extract_approval_estimates(data_substr)
+#     print(type(approvals['2017-01-23']), approvals['2017-01-23'])
 # ```
 # 
-# And here is an example where there is no alarm:
+# should display `<class 'float'> 45.46693`. (Refer to the first entry of ratings from the PDF, which begins on page 50.)
 # 
-# ```python
-# x = [11, 15, 35, 34, 11, 1, 28, 37, 20, 32, 25, 21, 45, 25, 31, 16, 36, 28, 18, 25]
-# alpha = 50
-# assert raise_alarm(x, alpha) == (-1, None)
-# ```
+# Also, your function should keep **only** records for which `"future":false`, that is, **it should not include the extrapolated values**.
+# 
+# You may make the following assumptions:
+# 
+# 1. Dates are *not* duplicated.
+# 2. All encountered dates have valid approval estimates.
+# 3. All data records are encoded using the same pattern as shown in the file snippets above.
 
-# In[78]:
+# In[125]:
 
 
-def raise_alarm(x, alpha):
-    mean_obs = calc_mean(x)
-    trip_values = cusum(x, mean_obs)
-    trip_index = get_index(trip_values, alpha)
-    trip_value = x[trip_index]
+def extract_approval_estimates(data_substr):
+    assert isinstance(data_substr, str), "`data_substr` is not a string."
+    assert data_substr[0] == '{' and data_substr[-1] == '}', "Input may be malformed."
     
-    if trip_index == -1:
-        trip_value = None
     
-    return trip_index, trip_value
-
-
-raise_alarm([0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9], 12)
-
-
-# In[79]:
-
-
-## Test cell: `exercise3_0`
-
-def check_exercise3(x, alpha, ans):
-    from math import isclose
-    print("Test case:")
-    print("- Observations  : {}".format(x))
-    print("- Threshold     : {}".format(alpha))
-    print("- Correct output: {}".format(ans))
-    your_ans = raise_alarm(x, alpha)
-    assert type(your_ans) is tuple and len(your_ans) == 2, "You did not return a pair!"
-    print("- Your output   : {}".format(your_ans))
-    assert ans[0] == your_ans[0], "Index position part of the returned pair did not match!"
-    if ans[0] == -1:
-        check1 = (ans[1] == your_ans[1]) # None value
-    else:
-        check1 = isclose(ans[1], your_ans[1], rel_tol=1e-15)
-    assert check1, "Element part of the returned pair did not match!"
-    print("")
-
-# Test 1
-check_exercise3([0, 0, 0, 0, 1, 0, 1, 4, 9, 8, 12, 13, 12, 10, 9, 7, 9], 12, (11, 13))
-
-# test 2
-check_exercise3([11, 15, 35, 34, 11, 1, 28, 37, 20, 32, 25, 21, 45, 25, 31, 16, 36, 28, 18, 25], 50, (-1, None))
-
-print("Passed: test 1/2")
-
-
-# In[80]:
-
-
-## Test cell: `exercise3_1`
-import matplotlib.pyplot as plt
-import numpy as np
-print("The list values and your point of change detection")
-for i in range(15):
-    change_index = np.random.randint(10,100)
-    change_volume = np.random.randint(3,5)
-    test_input = list(np.random.random(change_index))+ list(np.random.random(20)+change_volume)
-    test_input.insert(change_index - 10, change_volume)
-    test_input.insert(change_index - 20, change_volume)
+    date_find = re.findall("(\{\"date\"\:)(\"\d{4}-\d{2}-\d{2}\")(\,\"future\"\:false\,)", data_substr)
     
-    # Plot sequences
-    print("----------------- list {} ----------------- ".format(i))
-    plt.plot(test_input)
-    your_ans = raise_alarm(test_input,change_volume*2)[0]
-    plt.plot([your_ans]*10, range(10), 'k-', lw=1)
-    plt.show()
-    assert raise_alarm(test_input,change_volume*5)[0] >= change_index, print("You do not have the correct index of change")
-    
-print("\n Passed: test 2/2")
-
-
-# Let's take this one step further. 
-# 
-# In the previous exercises, we considered the mean of the list to be a constant value (or a known value) over all times. Such a random time series is said to be _stationary_. But there are cases when the system is non-stationary, where the mean value varies in time. This phenomenon occurs with, for instance, seasonal data, like when the average temperature depends on the time of year.
-# 
-# In this case, you might want a _dynamic CuSum_, that is, one that maintains a **moving average** that you update over time. For the last exercise in this notebook, let's implement a key piece of such a method.
-
-# **Exercise 4** (2 points). Write a function, `calc_mean_dynamic(L)`, that takes a list of values `L` and returns a new list, `mu`, where `mu[t]` is the average value of the **preceding four time points**, `L[t-4]`, `L[t-3]`, `L[t-2]`, and `L[t-1]`.
-# 
-# When `t < 4`, the preceding time points do not exist. Your computation should assume that they do and that their values are 0.
-# 
-# That is, consider this example:
-# 
-# ```python
-# L = [1, 1, 2, 4, 6, 2, 1]
-# assert calc_mean_dynamic(L) == [0, 0.25, 0.5, 1, 2, 3.25, 3.5]
-# ```
-# 
-# At `t=0`, there are no earlier time points. Therefore, the output should be $\frac{0+0+0+0}{4} = 0$. At `t=1`, there is only one preceding time point, `L[0]=1`. Therefore, the dynamic or moving average should be computed as $\frac{0+0+0+1}{4} = 0.25$. At `t=2`, it would be $\frac{0+0+1+1}{4} = 0.5$.
-
-# In[147]:
-
-
-import pandas as pd
-
-def calc_mean_dynamic(L):
-    
-    new_L = [0,0,0,0]
-    
-    for i in L:
-        new_L.append(i)
+    dates = []
+    for date in date_find:
+        #print(date[1])
+        date = re.sub(r'"', '', date[1])
+        dates.append(date)
         
-    run_mean = np.convolve(new_L, np.ones((4,))/4, mode='valid')
-    run_mean = list(run_mean)
+    appv_find = re.findall(
+    "(\"future\"\:false\,\"subgroup\"\:\"All polls\")(\,\"approve_estimate\"\:)(\"\d{2}\.\d{3,5})",
+     data_substr
+    )
     
-    run_mean = run_mean[:len(L)]
-
-    return list(run_mean)
+    appvs = []
+    for appv in appv_find:
+        appv = re.sub(r'"', '', appv[2])
+        appvs.append(float(appv))
+        
+    recs = {}    
     
-calc_mean_dynamic([1, 1, 2, 4, 6, 2, 1])
+    together = list(zip(dates, appvs))
+    
+    for i in together:
+        recs[i[0]] = i[1]
+    
+    
+    
+    
+    return recs
+
+approvals = extract_approval_estimates(raw_data)
+print("Found {} data records.".format(len(approvals)))
+
+
+# In[124]:
+
+
+# Test cell 0: test__extract_approval_estimates__0 (2 points)
+
+num_approvals_expected, min_date_expected, max_date_expected = 592, '2017-01-23', '2018-09-06'
+
+approvals = extract_approval_estimates(raw_data)
+assert isinstance(approvals, dict), "Your function returned an object of type {} instead of a dictionary (type `dict`).".format(type(approvals))
+assert len(approvals) == num_approvals_expected,        "Your function should have found {} records but has {} instead, which is too {}.".format(num_approvals_expected,
+                                                                                                len(approvals),
+                                                                                                "few" if len(approvals) < num_approvals_expected else "many")
+for date_expected, date_occurred in zip([min_date_expected, max_date_expected],
+                                        [min(approvals.keys()), max(approvals.keys())]):
+    assert date_occurred == date_expected, "A record for {} is missing!".format(date_expected)
+
+print("\n(Passed!)")
+
+
+# In[126]:
+
+
+# Test cell 1: test__extract_approval_estimates__1__HIDDEN (1 points)
+
+def sample_ratings(ratings, k):
+    from random import sample
+    ratings_sample = []
+    for date in sample(ratings.keys(), k):
+        ratings_sample.append((date, ratings[date]))
+    return ratings_sample
+
+if False:
+    print(sample_ratings(approvals, 20))
+
+import math
+sample_approvals = [('2017-06-04', 38.89021), ('2017-10-30', 37.26442), ('2017-03-07', 44.3455), ('2017-02-19', 44.10547), ('2017-05-18', 39.45036), ('2017-09-04', 37.50347), ('2017-03-26', 42.08798), ('2018-06-29', 41.75614), ('2017-10-24', 37.1561), ('2017-11-23', 38.42519), ('2017-11-06', 37.69767), ('2017-06-17', 38.7223), ('2018-02-17', 41.3879), ('2017-05-16', 39.90671), ('2017-03-18', 42.70947), ('2018-07-17', 42.0509), ('2017-10-31', 37.24255), ('2017-02-28', 42.93886), ('2018-08-17', 41.97367), ('2018-08-28', 41.37738)]
+for date, value in sample_approvals:
+    assert date in approvals, "Approvals is missing a record for the date '{}'!".format(date)
+    assert math.isclose(approvals[date], value, abs_tol=1e-5),            "Approval rating for {} should be {}, not {}.".format(date, value, approvals[date])
+    
+print("\n(Passed!)")
+
+
+# **Exercise 2** (2 points). Complete the function, `extract_disapproval_estimates(data_substr)`, below. It should behave just like `extract_approval_estimates()` except that it should extract disapproval estimates rather than approval estimates.
+# 
+# For instance, executing
+# 
+# ```python
+# disapprovals = extract_disapproval_estimates(raw_data)
+# print(type(disapprovals['2017-01-23']), disapprovals['2017-01-23'])
+# ```
+# 
+# should display, `<class 'float'> 41.26452`.
+
+# In[182]:
+
+
+def extract_disapproval_estimates(data_substr):
+    assert isinstance(data_substr, str), "`data_substr` is not a string."
+    assert data_substr[0] == '{' and data_substr[-1] == '}', "Input may be malformed."
+    
+    
+    date_find = re.findall("(\{\"date\"\:)(\"\d{4}-\d{2}-\d{2}\")(\,\"future\"\:false\,)", data_substr)
+    
+    dates = []
+    for date in date_find:
+        #print(date[1])
+        date = re.sub(r'"', '', date[1])
+        dates.append(date)
+        
+    dsp_find = re.findall(
+    "(\"future\"\:false\,\"subgroup\"\:\"All polls\")(\,\"approve_estimate\"\:)(\"\d{2}\.\d{3,5})(\"\,\"approve_hi\"\:\"\d{2}\.\d{3,5}\"\,\"approve_lo\"\:\"\d{2}\.\d{3,5}\"\,\")(disapprove_estimate\"\:\")(\d{2}\.\d{3,5})",
+     data_substr
+    )
+    
+    dsps = []
+    
+    for i in dsp_find:
+        dsps.append(float(i[5]))
+        
+    recs = {}    
+    
+    together = list(zip(dates, dsps))
+    
+    for i in together:
+        recs[i[0]] = i[1]
+
+    
+    return recs
+
+disapprovals = extract_disapproval_estimates(raw_data)
+print("Found {} data records.".format(len(disapprovals)))
+disapprovals
+
+
+
+# In[183]:
+
+
+# Test cell 0: test__extract_disapproval_estimates__0 (1 point)
+
+disapprovals = extract_disapproval_estimates(raw_data)
+assert isinstance(disapprovals, dict), "Your function returned an object of type {} instead of a dictionary (type `dict`).".format(type(disapprovals))
+
+for date in approvals.keys():
+    assert date in disapprovals, "The date '{}' is missing.".format(date)
+
+print("\n(Passed!)")
+
+
+# In[184]:
+
+
+# Test cell 1: test__extract_disapproval_estimates__1__HIDDEN (1 point)
+
+if False:
+    print(sample_ratings(disapprovals, 20))
+
+import math
+sample_disapprovals = [('2018-05-27', 52.33014), ('2017-07-18', 55.6564), ('2017-04-22', 52.33886), ('2017-05-14', 53.41823), ('2018-07-18', 52.83702), ('2018-03-31', 53.42228), ('2018-05-21', 52.68593), ('2017-05-18', 54.28648), ('2017-07-04', 54.46843), ('2018-08-31', 54.46505), ('2018-07-20', 52.74246), ('2018-02-13', 53.64082), ('2017-07-07', 55.12906), ('2017-12-22', 57.08867), ('2018-06-20', 51.4082), ('2017-12-20', 56.98474), ('2017-09-27', 54.94124), ('2018-06-13', 52.53515), ('2018-02-20', 53.43631), ('2017-06-25', 55.20745)]
+for date, value in sample_disapprovals:
+    assert date in disapprovals, "Disapprovals is missing a record for the date '{}'!".format(date)
+    assert math.isclose(disapprovals[date], value, abs_tol=1e-5),            "Disapproval rating for {} should be {}, not {}.".format(date, value, disapprovals[date])
+    
+print("\n(Passed!)")
+
+
+# **Exercise 3** (1 point). Complete the function, `filter_dates_by_month(month_str, dates)`, below, so that it filters a list of dates by a particular target month and year. Its inputs are as follows.
+# 
+# - The `month_str` argument is a string of the form `yyyy-mm`. This string encodes a target month and year.
+# - The `dates` argument is a Python set of dates of the form `yyyy-mm-dd`. Think of these as the keys in the approval and disapproval ratings dictionaries, for instance.
+# 
+# The function should return a **Python set** containing only those elements of `dates` that match the given `month_str`. For example, the call
+# 
+# ```python
+#   filter_dates_by_month('2018-07', {'2018-05-02', '2018-07-05', '2018-07-01', '2017-07-02', '2016-07-31'})
+# ```
+# 
+# would return
+# 
+# ```python
+#   {'2018-07-05', '2018-07-01'}
+# ```
+
+# In[197]:
+
+
+def filter_dates_by_month(month_str, dates):
+    assert isinstance(month_str, str), "`month_str` is of type {}, rather than `str`.".format(type(month_str))
+    assert re.match(r'\d{4}-\d{2}$', month_str), "`month_str == '{}'` is invalid.".format(month_str)
+    
+    s = month_str.split("-")
+    year = s[0]
+    month = s[1]
+    
+    res = []
+    
+    for i in dates:
+        d = i.split("-")
+        year2 = d[0]
+        month2 = d[1]
+        
+        if year2 == year and month2 == month:
+            res.append(i)
+        
+        
+    
+    
+    return set(res)
+    
+    
+filter_dates_by_month('2018-07', {'2018-05-02', '2018-07-05', '2018-07-01', '2017-07-02', '2016-07-31'})
     
 
 
-# In[148]:
+# In[198]:
 
 
-# Test cell: `exercise4`
+# Test cell: `test__filter_dates_by_month` (1 point)
 
-def check_exercise4(L, ans):
-    from math import isclose
-    print("Test case:")
-    print("- Input      : {}".format(L))
-    print("- True answer: {}".format(ans))
-    your_ans = calc_mean_dynamic(L)
-    print("- Your answer: {}".format(your_ans))
-    assert len(ans) == len(your_ans), "Output lengths do not match!"
-    for i, (a, b) in enumerate(zip(ans, your_ans)):
-        assert isclose(a, b, rel_tol=1e-13), "Answers differ at position {}: {} vs. {}".format(i, a, b)
-    print("")
+def test__filter_dates_by_month():
+    from random import sample
+    padded_digits = lambda a, b: sample(range(a, b), 1)[0]
+    rand_year = lambda: padded_digits(0, 10000)
+    rand_month = lambda: padded_digits(1, 13)
+    rand_day = lambda m: padded_digits(1, 28 if m == 2 else 31 if m in [1, 3, 5, 7, 8, 10, 12] else 30)
+    coin_flip = lambda: sample([False, True], 1)[0]
+    
+    yyyy_0, mm_0 = rand_year(), rand_month()
+    month_str = '{:04d}-{:02d}'.format(yyyy_0, mm_0)
+    all_dates = set()
+    answer = set()
+    for _ in range(10):
+        match = coin_flip()
+        if match:
+            yyyy, mm = yyyy_0, mm_0
+        else:
+            yyyy, mm = rand_year(), rand_month()
+        date = '{:04d}-{:02d}-{:02d}'.format(yyyy, mm, rand_day(mm))
+        all_dates |= {date}
+        if match:
+            answer |= {date}
+    filtered_dates = filter_dates_by_month(month_str, all_dates)
+    print("All dates: {}".format(all_dates))
+    print("Target month: {}".format(month_str))
+    print("Your matches: {}".format(filtered_dates))
+    if filtered_dates != answer:
+        print("*** Your solution is incorrect! ***")
+        excesses = filtered_dates - answer
+        omissions = answer - filtered_dates
+        if excesses:
+            print("It erroneously includes {}.".format(excesses))
+        if omissions:
+            print("It erroneously omits {}.".format(omissions))
+        assert False
+    else:
+        print("==> Looks good!\n")
 
-# test 1
-check_exercise4([1, 1, 2, 4, 6, 2, 1],
-                [0, 0.25, 0.5, 1, 2, 3.25, 3.5])
-
-# test 2
-check_exercise4([36, 29, 28, 22, 5, 20, 39, 3, 40, 48, 47, 9, 0, 36, 31, 20, 13, 41, 10, 46],
-                [0.0, 9.0, 16.25, 23.25, 28.75, 21.0, 18.75, 21.5, 16.75, 25.5, 32.5, 34.5, 36.0, 26.0, 23.0, 19.0, 21.75, 25.0, 26.25, 21.0])
-
-# test 3
-check_exercise4([39, 37, 17, 28, 36, 40, 35, 32, 23, 1, 38, 3, 33, 3, 47, 13, 24, 38, 14, 8],
-                [0.0, 9.75, 19.0, 23.25, 30.25, 29.5, 30.25, 34.75, 35.75, 32.5, 22.75, 23.5, 16.25, 18.75, 19.25, 21.5, 24.0, 21.75, 30.5, 22.25])
-
-# test 4
-check_exercise4([1,1,2,4,2,4,6,8,9,1,2,3,1,2,1,5],
-                [0.0, 0.25, 0.5, 1.0, 2.0, 2.25, 3.0, 4.0, 5.0, 6.75, 6.0, 5.0, 3.75, 1.75, 2.0, 1.75])
-
-print("(Passed!)")
+for k in range(5):
+    print("=== Test case {} ===".format(k))
+    test__filter_dates_by_month()
 
 
-# ***Fin!*** You've reached the end of this problem. Don't forget to restart the kernel and run the entire notebook from top-to-bottom to make sure you did everything correctly. If that is working, try submitting this problem. (Recall that you must submit and pass the autograder to get credit for your work!)
+# **Exercise 4** (3 points). Let the _discrepancy rating_ of a given day be that day's approval rating minus its disapproval rating. Complete the function, `avg_discrepancy_in_month(month_str, approvals, disapprovals)`, below, so that it returns the **average** daily discrepancy rating for a given month.
+# 
+# - The `month_str` argument is a string of the form `yyyy-mm`. This string encodes a target month and year.
+# - The `approvals` argument is a dictionary, whose keys are dates and whose values are approval ratings.
+# - The `disapprovals` argument is a dictionary, whose keys are dates and whose values are disapproval ratings.
+# 
+# You may assume that if a date is in `approvals` then it is also in `disapprovals`, and vice-versa. You can ignore missing dates; that is, compute the averages based on whatever dates exist in the input dictionaries.
+
+# In[253]:
+
+
+from collections import defaultdict
+
+def avg_discrepancy_in_month(month_str, approvals, disapprovals):
+    assert isinstance(month_str, str), "`month_str` is of type {}, rather than `str`.".format(type(month_str))
+    assert re.match(r'\d{4}-\d{2}$', month_str), "`month_str == '{}'` is invalid.".format(month_str)
+    assert all([date in disapprovals for date in approvals]), "`disapprovals` is missing dates that appear in `approvals`."
+    assert all([date in approvals for date in disapprovals]), "`approvals` is missing dates that appear in `disapprovals`."
+    
+    app_dates = list(approvals.keys())
+    dsp_dates = list(disapprovals.keys())
+    
+    together = set(app_dates + dsp_dates)
+    together = list(together)
+    
+    filter_all = filter_dates_by_month(month_str, together)
+    
+    ratings = []
+    
+    for i in filter_all:
+        app = approvals[i]
+        dsp = disapprovals[i]
+        disc = app - dsp
+        ratings.append(disc)
+        
+    avg_ratings = sum(ratings) / len(ratings)
+        
+    
+    
+    
+    return avg_ratings
+    
+
+for month in ['2017-01', '2018-09']:
+    disc = avg_discrepancy_in_month(month, approvals, disapprovals)
+    print("Average daily discrepancy for {}: {}".format(month, disc))
+
+
+# In[254]:
+
+
+# Test cell: test__avg_discrepancy_in_month__0 (1 point)
+
+import math
+for month, disc_true in [('2017-01', 2.799275555555555), ('2018-09', -14.008344999999997)]:
+    disc = avg_discrepancy_in_month(month, approvals, disapprovals)
+    assert math.isclose(disc, disc_true, abs_tol=1e-2),            "Your average daily discrepancy is {} instead of {}.".format(disc, disc_true)
+    
+print("\n(Passed!)")
+
+
+# In[255]:
+
+
+# Test cell: test__avg_discrepancy_in_month__1__HIDDEN (2 points)
+
+all_complete_months = ['2017-02', '2017-03', '2017-04', '2017-05', '2017-06', '2017-07', '2017-08', '2017-09',
+                       '2017-10', '2017-11', '2017-12', '2018-01', '2018-02', '2018-03', '2018-04', '2018-05',
+                       '2017-06', '2018-07', '2018-08']
+
+if False: # Generate solutions
+    solutions = [(month, avg_discrepancy_in_month(month, approvals, disapprovals)) for month in all_complete_months]
+else: # Assume solutions
+    solutions = [('2017-02', -5.236897857142858), ('2017-03', -7.590843548387097), ('2017-04', -11.404569), ('2017-05', -13.227069354838711), ('2017-06', -16.525405666666668), ('2017-07', -16.39675064516129), ('2017-08', -19.508681612903224), ('2017-09', -16.797917), ('2017-10', -18.355616129032256), ('2017-11', -17.916010999999994), ('2017-12', -19.313219354838708), ('2018-01', -16.359479999999998), ('2018-02', -13.414909642857141), ('2018-03', -13.186816129032259), ('2018-04', -13.382937666666669), ('2018-05', -10.298456774193546), ('2017-06', -16.525405666666668), ('2018-07', -11.030132580645164), ('2018-08', -11.177329354838706)]
+print(solutions)
+
+import math
+for month, disc_true in solutions:
+    disc = avg_discrepancy_in_month(month, approvals, disapprovals)
+    assert math.isclose(disc, disc_true, abs_tol=1e-2),            "Your average daily discrepancy is {} instead of {}.".format(disc, disc_true)
+
+print("\n(Passed!)")
+
+
+# **Fin!** Remember to test your solutions by running them as the autograder will: restart the kernel and run all cells from "top-to-bottom." Also remember to submit to the autograder; otherwise, you will **not** get credit for your hard work!
